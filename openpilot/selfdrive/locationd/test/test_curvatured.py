@@ -75,17 +75,6 @@ class TestCurvatureEstimator:
     for speed_idx, weight in speed_weights:
       assert np.isclose(float(estimator.counts[speed_idx, curvature_idx]), weight)
 
-  def test_data_quality_weights_learning(self):
-    estimator = get_estimator()
-    desired_curvature = 32e-6
-    v_ego = float(CurvatureDLookup.SPEED_ANCHORS[3])
-
-    estimator.add_measurement(desired_curvature, desired_curvature * 0.6, v_ego, data_quality=0.25)
-
-    idx = CurvatureDLookup.indices(desired_curvature, v_ego)
-    assert idx is not None
-    assert np.isclose(float(estimator.counts[idx]), 0.25)
-
   def test_preview_is_not_apply_capped(self):
     estimator = get_estimator()
     desired_curvature = 2.048e-3
@@ -358,43 +347,6 @@ class TestCurvatureEstimator:
     assert not estimator._steering_override_at(11.99)
     assert estimator._steering_override_at(12.0)
     assert estimator.last_override_t == 12.0
-
-  def test_override_events_are_latched_and_quality_recovers(self):
-    estimator = get_estimator()
-
-    estimator.record_override_event(1.0, "carState", True)
-    assert estimator.override_active
-    assert np.isclose(estimator.override_data_quality_at(6.0), 0.5)
-
-    estimator.record_override_event(11.0, "carState", False)
-    assert not estimator.override_active
-    assert estimator.last_override_t == 11.0
-    assert np.isclose(estimator.override_data_quality_at(13.0), 0.2)
-    assert np.isclose(estimator.override_data_quality_at(16.0), 0.5)
-    assert np.isclose(estimator.override_data_quality_at(21.0), 1.0)
-
-  def test_brief_override_remains_latched_until_live_pose(self):
-    estimator = get_estimator()
-
-    estimator.record_override_event(10.01, "carStateIC", True)
-    estimator.record_override_event(10.02, "carStateIC", False)
-
-    assert not estimator.override_active
-    assert estimator.last_override_t == 10.02
-    assert 0.99 <= estimator.override_data_quality_at(10.05) < 1.0
-    assert (10.05 - estimator.last_override_t) < 2.0
-
-  def test_overlapping_override_sources_count_as_one_interval(self):
-    estimator = get_estimator()
-
-    estimator.record_override_event(1.0, "carState", True)
-    estimator.record_override_event(2.0, "carStateIC", True)
-    estimator.record_override_event(3.0, "carState", False)
-    assert estimator.override_active
-
-    estimator.record_override_event(4.0, "carStateIC", False)
-    assert not estimator.override_active
-    assert np.isclose(estimator.override_data_quality_at(4.0), 0.7)
 
   def test_ic_values_keep_their_own_timestamps(self):
     estimator = get_estimator()

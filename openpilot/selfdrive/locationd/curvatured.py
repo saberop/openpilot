@@ -18,7 +18,6 @@ VERSION = 1
 HISTORY = 5.0
 MAX_YAW_RATE_STD = 1.0
 MIN_ENGAGE_BUFFER = 2.0
-OVERRIDE_QUALITY_WINDOW = 10.0
 ALLOWED_CARS = ['volkswagen']
 STATUS_LOG_INTERVAL = 10.0
 MAX_LEARN_ROLL_LATERAL_ACCEL = 0.10
@@ -40,8 +39,8 @@ PREVIEW_REFRESH_EVERY_N_UPDATES = 20
 #
 # Safety / scope:
 # - Learning is gated by valid upstream pose/calibration, low roll, low yaw uncertainty, and no steering override.
-# - Override data quality tracks the override-free share of the last 10 s and weights learning after the hard gate.
-# - Override events are latched from non-conflated sockets so brief overrides cannot be missed by the learning loop.
+# - TODO: Track 10 s override-free data quality and use it to weight sample counts/EMA updates after the hard override gate.
+# - TODO: Latch override events/durations so brief overrides cannot be missed by conflated messaging.
 # - Corrections are bounded by a relative cap envelope over the speed-available buckets:
 #   - up to 50% of local curvature through the last still-supported bucket
 #   - from there, the cap fades toward 0 at the next outer bucket center
@@ -530,10 +529,6 @@ class CurvatureEstimator(CurvatureDLookup):
 
     self.last_lat_inactive_t = 0.0
     self.last_override_t = 0.0
-    self.override_states = {"carState": False, "carStateIC": False}
-    self.override_intervals: deque[tuple[float, float]] = deque()
-    self.override_active_since: float | None = None
-    self.data_quality = 1.0
 
     self.current_bucket = (-1, -1)
     self.current_correction = 0.0
@@ -644,54 +639,17 @@ class CurvatureEstimator(CurvatureDLookup):
       return None
     return bool(steering_pressed or steering_slightly_pressed)
 
-  @property
-  def override_active(self) -> bool:
-    return any(self.override_states.values())
-
-  def record_override_event(self, t: float, which: str, pressed: bool) -> None:
-    if which not in self.override_states:
-      raise ValueError(f"unsupported override service: {which}")
-
-    was_active = self.override_active
-    self.override_states[which] = bool(pressed)
-    is_active = self.override_active
-
-    if not was_active and is_active:
-      self.override_active_since = t
-    elif was_active and not is_active:
-      if self.override_active_since is not None:
-        self.override_intervals.append((self.override_active_since, t))
-      self.override_active_since = None
-
-    if was_active or is_active:
-      self.last_override_t = max(self.last_override_t, t)
-
-  def override_data_quality_at(self, t: float) -> float:
-    window_start = t - OVERRIDE_QUALITY_WINDOW
-    while self.override_intervals and self.override_intervals[0][1] <= window_start:
-      self.override_intervals.popleft()
-
-    override_duration = sum(max(0.0, min(end, t) - max(start, window_start))
-                            for start, end in self.override_intervals)
-    if self.override_active_since is not None:
-      override_duration += max(0.0, t - max(self.override_active_since, window_start))
-
-    self.data_quality = float(np.clip(1.0 - override_duration / OVERRIDE_QUALITY_WINDOW, 0.0, 1.0))
-    return self.data_quality
-
   def add_measurement(self, desired_curvature: float, actual_curvature: float, v_ego: float,
-                      schedule_only: bool = False, data_quality: float = 1.0) -> None:
+                      schedule_only: bool = False) -> None:
     curvature_idx = self.curvature_index(desired_curvature)
     speed_weights = self.learning_speed_weights(v_ego)
-    data_quality = float(np.clip(data_quality, 0.0, 1.0))
-    if curvature_idx is None or len(speed_weights) == 0 or data_quality <= 0.0:
+    if curvature_idx is None or len(speed_weights) == 0:
       return
 
     error_cap = self.learning_error_cap(desired_curvature)
     error = float(np.clip(self.projected_error(desired_curvature, actual_curvature), -error_cap, error_cap))
 
-    for speed_idx, speed_weight in speed_weights:
-      weight = speed_weight * data_quality
+    for speed_idx, weight in speed_weights:
       if weight <= 0.0:
         continue
 
@@ -907,12 +865,12 @@ class CurvatureEstimator(CurvatureDLookup):
       self.vego.append(msg.vEgo)
       self.steering_pressed.append(bool(msg.steeringPressed))
       if msg.steeringPressed:
-        self.last_override_t = max(self.last_override_t, t)
+        self.last_override_t = t
     elif which == "carStateIC":
       self.car_state_ic_t.append(t)
       self.steering_slightly_pressed.append(bool(msg.steeringSlightlyPressed))
       if msg.steeringSlightlyPressed:
-        self.last_override_t = max(self.last_override_t, t)
+        self.last_override_t = t
     elif which == "controlsStateIC":
       self.controls_state_ic_t.append(t)
       self.model_desired_curvature.append(msg.modelDesiredCurvature)
@@ -925,7 +883,6 @@ class CurvatureEstimator(CurvatureDLookup):
       self.lag = get_lat_delay(self.params, msg.lateralDelay)
     elif which == "livePose" and self.use_params:
       self.live_pose_update_index += 1
-      self.override_data_quality_at(t)
       if not self._history_ready():
         return
       if not (msg.angularVelocityDevice.valid and msg.posenetOK and msg.inputsOK and self.calibrator.calib_valid):
@@ -944,7 +901,7 @@ class CurvatureEstimator(CurvatureDLookup):
       if any(x is None for x in (lat_active, roll_comp, v_ego, desired_curvature, steering_override)):
         return
 
-      if not bool(lat_active) or bool(steering_override) or self.override_active or float(v_ego) < self.MIN_SPEED:
+      if not bool(lat_active) or bool(steering_override) or float(v_ego) < self.MIN_SPEED:
         return
 
       device_pose = Pose.from_live_pose(msg)
@@ -960,8 +917,7 @@ class CurvatureEstimator(CurvatureDLookup):
       desired_curvature = float(desired_curvature)
       actual_curvature = self.actual_curvature_from_yaw_rate(yaw_rate, v_ego, roll_compensation=float(roll_comp))
 
-      self.add_measurement(desired_curvature, actual_curvature, v_ego,
-                           schedule_only=True, data_quality=self.data_quality)
+      self.add_measurement(desired_curvature, actual_curvature, v_ego, schedule_only=True)
       self.refresh_curve_lookups(self.live_pose_update_index)
 
   def get_msg(self, valid: bool = True, live_valid: bool = True,
@@ -1008,7 +964,6 @@ class CurvatureEstimator(CurvatureDLookup):
                   f"lag={self.lag:.3f} total_points={int(round(float(self.counts.sum())))} " +
                   f"bucket={self.current_bucket} bucket_points={self.current_bucket_points} " +
                   f"corr={self.current_correction:.8f} cal={self.calibration_percent(self.counts)} " +
-                  f"data_quality={self.data_quality:.3f} " +
                    f"invalid={invalid} not_alive={not_alive}")
 
 
@@ -1018,7 +973,6 @@ def main():
   pm = messaging.PubMaster(['liveCurvatureParameters'])
   sm = messaging.SubMaster(['carControlIC', 'carControl', 'carState', 'carStateIC', 'liveCalibration', 'livePose',
                             'liveDelay', 'controlsStateIC'], poll='livePose')
-  override_socks = {which: messaging.sub_sock(which, conflate=False) for which in ('carState', 'carStateIC')}
 
   params = Params()
   CP = messaging.log_from_bytes(params.get("CarParams", block=True), car.CarParams)
@@ -1026,15 +980,6 @@ def main():
 
   while True:
     sm.update()
-
-    override_events = []
-    for which, sock in override_socks.items():
-      for event in messaging.drain_sock(sock):
-        pressed = event.carState.steeringPressed if which == 'carState' else event.carStateIC.steeringSlightlyPressed
-        if event.valid or pressed:
-          override_events.append((event.logMonoTime * 1e-9, which, bool(pressed)))
-    for t, which, pressed in sorted(override_events):
-      curvature_estimator.record_override_event(t, which, pressed)
 
     if sm.all_checks():
       for which in sm.updated.keys():
