@@ -19,13 +19,11 @@ from openpilot.selfdrive.controls.lib.latcontrol_pid import LatControlPID
 from openpilot.selfdrive.controls.lib.latcontrol_angle import LatControlAngle, STEER_ANGLE_SATURATION_THRESHOLD
 from openpilot.selfdrive.controls.lib.latcontrol_curvature import LatControlCurvature
 from openpilot.selfdrive.controls.lib.latcontrol_torque import LatControlTorque
-from openpilot.selfdrive.controls.lib.latcontrol_curvature import LatControlCurvature
 from openpilot.selfdrive.controls.lib.longcontrol import LongControl
 from openpilot.selfdrive.modeld.modeld import LAT_SMOOTH_SECONDS
 from openpilot.selfdrive.locationd.helpers import PoseCalibrator, Pose
 from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import get_T_FOLLOW
 from openpilot.common.pt2 import PT2Filter
-from openpilot.common.realtime import DT_CTRL
 
 from openpilot.sunnypilot.selfdrive.controls.controlsd_ext import ControlsExt
 
@@ -119,7 +117,7 @@ class Controls(ControlsExt):
       self.force_rhd_for_bsm = self.params.get_bool("ForceRHDForBSM")
       self.enable_long_comfort_mode = self.params.get_bool("EnableLongComfortMode")
       self.disable_car_steer_alerts = self.params.get_bool("DisableCarSteerAlerts")
-  
+
   def state_control(self):
     CS = self.sm['carState']
 

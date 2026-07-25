@@ -124,7 +124,6 @@ class DynamicSteeringLearnerGraphMici(Widget):
     lcp = sm["liveCurvatureParameters"]
     lcp_frame = sm.recv_frame["liveCurvatureParameters"]
     car_state = sm["carState"]
-    controls_state = sm["controlsState"]
 
     fit_corrections = np.zeros(CurvatureDLookup.bucket_shape(), dtype=np.float32)
     fit_valid = np.zeros(CurvatureDLookup.bucket_shape(), dtype=bool)
@@ -194,7 +193,8 @@ class DynamicSteeringLearnerGraphMici(Widget):
       0.0, 1.0,
     ))
     marker_x = plot_rect.x + marker_alpha * plot_rect.width
-    marker_correction = float(np.interp(abs(desired_curvature), np.abs(self._plot_x), self._cached_fit_curve))
+    center_idx = len(self._plot_x) // 2
+    marker_correction = float(np.interp(abs(desired_curvature), self._plot_x[center_idx:], corrections[center_idx:]))
     marker_y = self._map_y(plot_rect, marker_correction, min_y, max_y)
     rl.draw_circle(int(marker_x), int(marker_y), 5, self._marker_glow_color)
     rl.draw_circle(int(marker_x), int(marker_y), 3, self._marker_color)

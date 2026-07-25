@@ -232,7 +232,7 @@ class TestCurvatureDController:
     def counting(*args, **kwargs):
       call_count["n"] += 1
       return original(*args, **kwargs)
-    CurvatureDLookup.interp_curve_value = counting
+    CurvatureDLookup.interp_curve_value = counting  # ty: ignore[invalid-assignment]
     try:
       # First call: cache miss, calls interp_curve_value once
       first = controller.get_correction(32e-6, v_ego)
