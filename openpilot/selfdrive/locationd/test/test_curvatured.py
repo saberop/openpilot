@@ -1,6 +1,7 @@
 import numpy as np
 
 from openpilot.cereal import custom
+from openpilot.common.test import OpenpilotTestCase
 from opendbc.car.structs import car
 
 from opendbc.car.volkswagen.values import CAR
@@ -16,7 +17,7 @@ def get_estimator():
   return CurvatureEstimator(CP)
 
 
-class TestCurvatureEstimator:
+class TestCurvatureEstimator(OpenpilotTestCase):
   @staticmethod
   def _train_speed_curve(estimator, v_ego: float):
     for desired_curvature in CurvatureDLookup.CURVATURE_BUCKET_CENTERS:
@@ -142,12 +143,12 @@ class TestCurvatureEstimator:
 
   def test_calibration_percent_tracks_valid_speed_curves(self):
     estimator = get_estimator()
-    assert estimator.get_msg().liveCurvatureParameters.calPerc == 0
+    assert estimator.get_msg().lateralCurvatureParameters.calPerc == 0
 
     for v_ego in CurvatureDLookup.SPEED_ANCHORS:
       self._train_speed_curve_full(estimator, float(v_ego))
 
-    assert estimator.get_msg().liveCurvatureParameters.calPerc == 100
+    assert estimator.get_msg().lateralCurvatureParameters.calPerc == 100
 
   def test_required_support_bucket_count_decreases_with_speed(self):
     low = CurvatureDLookup.required_support_bucket_count(0)
@@ -219,15 +220,15 @@ class TestCurvatureEstimator:
     idx = CurvatureDLookup.indices(desired_curvature, v_ego)
 
     assert idx is not None
-    assert msg.liveCurvatureParameters.bucketSpeed == idx[0]
-    assert msg.liveCurvatureParameters.bucketCurvature == idx[1]
-    assert msg.liveCurvatureParameters.currentCorrection > 0.0
-    assert len(msg.liveCurvatureParameters.corrections) == CurvatureDLookup.total_size()
-    assert len(msg.liveCurvatureParameters.counts) == CurvatureDLookup.total_size()
-    assert len(msg.liveCurvatureParameters.biases) == CurvatureDLookup.total_size()
-    assert len(msg.liveCurvatureParameters.fitValid) == CurvatureDLookup.total_size()
-    assert len(msg.liveCurvatureParameters.previewCorrections) == CurvatureDLookup.total_size()
-    assert len(msg.liveCurvatureParameters.previewValid) == CurvatureDLookup.total_size()
+    assert msg.lateralCurvatureParameters.bucketSpeed == idx[0]
+    assert msg.lateralCurvatureParameters.bucketCurvature == idx[1]
+    assert msg.lateralCurvatureParameters.currentCorrection > 0.0
+    assert len(msg.lateralCurvatureParameters.corrections) == CurvatureDLookup.total_size()
+    assert len(msg.lateralCurvatureParameters.counts) == CurvatureDLookup.total_size()
+    assert len(msg.lateralCurvatureParameters.biases) == CurvatureDLookup.total_size()
+    assert len(msg.lateralCurvatureParameters.fitValid) == CurvatureDLookup.total_size()
+    assert len(msg.lateralCurvatureParameters.previewCorrections) == CurvatureDLookup.total_size()
+    assert len(msg.lateralCurvatureParameters.previewValid) == CurvatureDLookup.total_size()
 
   def test_fit_valid_allows_noncontiguous_supported_buckets(self):
     estimator = get_estimator()
@@ -241,7 +242,7 @@ class TestCurvatureEstimator:
       for _ in range(int(CurvatureDLookup.MIN_BUCKET_POINTS[bucket_idx]) + 120):
         estimator.add_measurement(desired_curvature, desired_curvature * 0.6, v_ego)
 
-    msg = estimator.get_msg().liveCurvatureParameters
+    msg = estimator.get_msg().lateralCurvatureParameters
     fit_valid = CurvatureDLookup.unflatten_bucket(list(msg.fitValid), dtype=bool)
 
     assert fit_valid[speed_idx, selected_indices].all()
