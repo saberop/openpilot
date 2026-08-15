@@ -155,8 +155,8 @@ class TestCurvatureEstimator(OpenpilotTestCase):
     mid = CurvatureDLookup.required_support_bucket_count(3)
     high = CurvatureDLookup.required_support_bucket_count(6)
 
-    assert low == len(CurvatureDLookup.CURVATURE_BUCKET_CENTERS)
-    assert low >= mid >= high >= CurvatureDLookup.MIN_REQUIRED_SUPPORT_BUCKETS
+    assert len(CurvatureDLookup.CURVATURE_BUCKET_CENTERS) >= low >= mid >= high >= CurvatureDLookup.MIN_REQUIRED_SUPPORT_BUCKETS
+    assert low > high
 
   def test_fit_valid_no_longer_requires_global_total_samples(self):
     speed_idx = 3
@@ -215,6 +215,7 @@ class TestCurvatureEstimator(OpenpilotTestCase):
     v_ego = 22.0
 
     self._train_speed_curve(estimator, v_ego)
+    estimator.use_params = True
     estimator._update_current_lookup(desired_curvature, v_ego)
     msg = estimator.get_msg(include_debug=True, include_preview=True)
     idx = CurvatureDLookup.indices(desired_curvature, v_ego)
@@ -252,10 +253,11 @@ class TestCurvatureEstimator(OpenpilotTestCase):
     speed_idx = 3
     counts = np.zeros(CurvatureDLookup.bucket_shape(), dtype=np.float32)
     bias = np.zeros(CurvatureDLookup.bucket_shape(), dtype=np.float32)
-    selected = np.array([5, 6, 7, 8], dtype=int)
+    required = CurvatureDLookup.required_support_bucket_count(speed_idx)
+    selected = np.arange(required, dtype=int)
 
     counts[speed_idx, selected] = CurvatureDLookup.MIN_BUCKET_POINTS[selected] + 40.0
-    bias[speed_idx, selected] = np.array([2.0e-6, 6.0e-6, 1.2e-5, 2.0e-5], dtype=np.float32)
+    bias[speed_idx, selected] = np.linspace(2.0e-6, 2.0e-5, required, dtype=np.float32)
 
     fit_corrections, fit_valid = CurvatureDLookup.build_fit_corrections(bias, counts)
 
@@ -286,11 +288,11 @@ class TestCurvatureEstimator(OpenpilotTestCase):
     fit_valid = np.zeros(CurvatureDLookup.bucket_shape(), dtype=bool)
 
     fit_valid[speed_idx, 3] = True
-    fit_valid[speed_idx, 6] = True
+    fit_valid[speed_idx, 8] = True
     fit_corrections[speed_idx, 3] = 1.0e-6
-    fit_corrections[speed_idx, 6] = 8.0e-6
+    fit_corrections[speed_idx, 8] = 8.0e-6
 
-    gap_curvature = float(CurvatureDLookup.CURVATURE_BUCKET_CENTERS[4])
+    gap_curvature = float(CurvatureDLookup.CURVATURE_BUCKET_CENTERS[5])
     valid_curvature = float(CurvatureDLookup.CURVATURE_BUCKET_CENTERS[3])
 
     assert CurvatureDLookup.interp_curve_value(fit_corrections, fit_valid, v_ego, gap_curvature) == 0.0

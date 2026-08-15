@@ -175,10 +175,12 @@ class TestCurvatureDController(OpenpilotTestCase):
 
     outer_idx = CurvatureDLookup.curvature_index(1.5e-3)
     assert outer_idx is not None
-    self._set_curve(msg, 3, {outer_idx: 8.0e-5})
+    self._set_curve(msg, 0, {outer_idx: 8.0e-5})
     controller.update_live_params(msg.lateralCurvatureParameters)
 
-    v_ego = float(CurvatureDLookup.SPEED_ANCHORS[3])
+    # Use the lowest speed anchor so the global outer fade range remains
+    # inside the independent lateral-acceleration safety gate.
+    v_ego = float(CurvatureDLookup.SPEED_ANCHORS[0])
     outer = controller.get_correction(1.5e-3, v_ego)
 
     assert outer > 0.0
@@ -193,10 +195,10 @@ class TestCurvatureDController(OpenpilotTestCase):
     msg.lateralCurvatureParameters.biases = [0.0] * CurvatureDLookup.total_size()
 
     outer_idx = len(CurvatureDLookup.CURVATURE_BUCKET_CENTERS) - 1
-    self._set_curve(msg, 3, {outer_idx: 8.0e-5})
+    self._set_curve(msg, 0, {outer_idx: 8.0e-5})
     controller.update_live_params(msg.lateralCurvatureParameters)
 
-    v_ego = float(CurvatureDLookup.SPEED_ANCHORS[3])
+    v_ego = float(CurvatureDLookup.SPEED_ANCHORS[0])
     last_edge = float(CurvatureDLookup.CURVATURE_BUCKET_MAX)
     fade_mid = 0.5 * (last_edge + float(CurvatureDLookup.CURVATURE_MAX))
 
@@ -229,11 +231,11 @@ class TestCurvatureDController(OpenpilotTestCase):
 
     # Wrap the source to count calls
     call_count = {"n": 0}
-    original = CurvatureDLookup.interp_curve_value
-    def counting(*args, **kwargs):
+    original = CurvatureDLookup.interp_curve_value.__func__
+    def counting(cls, *args, **kwargs):
       call_count["n"] += 1
-      return original(*args, **kwargs)
-    CurvatureDLookup.interp_curve_value = counting  # ty: ignore[invalid-assignment]
+      return original(cls, *args, **kwargs)
+    CurvatureDLookup.interp_curve_value = classmethod(counting)  # ty: ignore[invalid-assignment]
     try:
       # First call: cache miss, calls interp_curve_value once
       first = controller.get_correction(32e-6, v_ego)
@@ -246,17 +248,17 @@ class TestCurvatureDController(OpenpilotTestCase):
 
       # v_ego noise below quantization must still hit the cache
       v_ego_step = 10 ** -CACHE_V_EGO_DECIMALS
-      noised = controller.get_correction(32e-6, v_ego + v_ego_step * 0.5)
+      noised = controller.get_correction(32e-6, round(v_ego, CACHE_V_EGO_DECIMALS) + v_ego_step * 0.25)
       assert noised == first
       assert call_count["n"] == 1
 
       # Curvature noise below quantization must still hit the cache
       curvature_step = 10 ** -CACHE_CURVATURE_DECIMALS
-      noised = controller.get_correction(32e-6 + curvature_step * 0.5, v_ego)
+      noised = controller.get_correction(round(32e-6, CACHE_CURVATURE_DECIMALS) + curvature_step * 0.25, v_ego)
       assert noised == first
       assert call_count["n"] == 1
     finally:
-      CurvatureDLookup.interp_curve_value = original
+      CurvatureDLookup.interp_curve_value = classmethod(original)
 
   def test_get_correction_cache_invalidates_on_live_params_update(self):
     """Cache must be invalidated when fit_corrections / fit_valid change,
