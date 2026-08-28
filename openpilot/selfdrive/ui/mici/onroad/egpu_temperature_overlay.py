@@ -61,7 +61,7 @@ class EgpuTemperatureOverlay(Widget):
     rl.draw_text_ex(self._font_value, value, value_pos, self.ROW_FONT_SIZE, 0, value_color)
 
   def _render(self, rect: rl.Rectangle) -> None:
-    if not ui_state.ic_show_egpu_temperatures or not ui_state.usbgpu or not self._shown_this_drive:
+    if not ui_state.ic_show_egpu_temperatures or not ui_state.chestnut_present or not self._shown_this_drive:
       return
 
     graph_top = rect.y + rect.height * STEERING_GRAPH_CONFIG.zero_line_screen_y_frac - STEERING_GRAPH_CONFIG.height * 0.5
