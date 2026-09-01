@@ -1,5 +1,6 @@
 Version 0.11.2 (2026-08-12)
 =======================
+* myremake
 * New driving model
   * Big model with 880M parameters
 * Support for big models running on an external GPU
