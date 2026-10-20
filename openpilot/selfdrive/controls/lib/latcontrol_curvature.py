@@ -7,7 +7,7 @@ from openpilot.common.pid import MultiplicativeUnwindPID
 from openpilot.selfdrive.controls.lib.latcontrol import LatControl
 from openpilot.selfdrive.controls.lib.drive_helpers import MAX_CURVATURE
 
-LAT_ACCEL_SATURATION_THRESHOLD = 0.4  # m/s^2
+LAT_ACCEL_SATURATION_THRESHOLD = 0.5  # m/s^2
 STEERING_OVERRIDE_UNWIND_TIME = MultiplicativeUnwindPID.DEFAULT_UNWIND_TIME
 SLIGHT_STEERING_OVERRIDE_UNWIND_TIME = 10.0  # seconds
 
